@@ -21,9 +21,10 @@ function getReadings(){
     if (this.readyState == 4 && this.status == 200) {
       var myObj = JSON.parse(this.responseText);
       console.log(myObj);
-      document.getElementById("temp").innerHTML = myObj.temperature;
-      document.getElementById("hum").innerHTML = myObj.humidity;
-      document.getElementById("pres").innerHTML = myObj.pressure;
+  document.getElementById("temp").innerHTML = myObj.temperature;
+  document.getElementById("hum").innerHTML = myObj.humidity;
+  document.getElementById("pres").innerHTML = myObj.pressure;
+  document.getElementById("ir_pulses").innerHTML = myObj.ir_pulses;
       updateDateTime();
     }
   }; 
@@ -48,9 +49,10 @@ if (!!window.EventSource) {
   source.addEventListener('new_readings', function(e) {
     console.log("new_readings", e.data);
     var obj = JSON.parse(e.data);
-    document.getElementById("temp").innerHTML = obj.temperature;
-    document.getElementById("hum").innerHTML = obj.humidity;
-    document.getElementById("pres").innerHTML = obj.pressure;
+  document.getElementById("temp").innerHTML = obj.temperature;
+  document.getElementById("hum").innerHTML = obj.humidity;
+  document.getElementById("pres").innerHTML = obj.pressure;
+  document.getElementById("ir_pulses").innerHTML = obj.ir_pulses;
     updateDateTime();
   }, false);
 }

@@ -27,15 +27,24 @@ AsyncEventSource events("/events");
 // Json Variable to Hold Sensor Readings
 JSONVar readings;
 
+
 // Timer variables
-unsigned long lastTime = 0;  
+unsigned long lastTime = 0;
 unsigned long timerDelay = 30000;
 
+// FC-03 IR sensor on D2 (GPIO4)
+const int IR_SENSOR_PIN = D2;
+volatile unsigned long pulseCount = 0;
+
+void IRAM_ATTR handleIrSensor() {
+  pulseCount++;
+}
 
 
 
 
-// Get Simulated Sensor Readings and return JSON object
+
+// Get Sensor Readings and return JSON object (with IR pulse count)
 String getSensorReadings() {
   float temp = random(200, 350) / 10.0;      // 20.0 - 35.0 °C
   float hum = random(300, 800) / 10.0;       // 30.0 - 80.0 %
@@ -43,6 +52,7 @@ String getSensorReadings() {
   readings["temperature"] = String(temp);
   readings["humidity"] = String(hum);
   readings["pressure"] = String(pres);
+  readings["ir_pulses"] = String(pulseCount);
   String jsonString = JSON.stringify(readings);
   return jsonString;
 }
@@ -71,7 +81,10 @@ void initWiFi() {
 
 void setup() {
   // Serial port for debugging purposes
-  Serial.begin(115200);
+
+  Serial.begin(9600);
+  pinMode(IR_SENSOR_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(IR_SENSOR_PIN), handleIrSensor, FALLING);
   initWiFi();
   initFS();
 
