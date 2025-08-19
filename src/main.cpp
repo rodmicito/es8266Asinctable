@@ -14,9 +14,9 @@
 #include <Arduino_JSON.h>
 
 
-// Replace with your network credentials
-const char* ssid = "cuarto";
-const char* password = "norueguito";
+// Access Point credentials
+const char* ap_ssid = "ESP8266_Sensors";
+const char* ap_password = "12345678";
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
@@ -67,16 +67,13 @@ void initFS() {
   }
 }
 
-// Initialize WiFi
+// Initialize WiFi as Access Point
 void initWiFi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi ..");
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.print('.');
-    delay(1000);
-  }
-  Serial.println(WiFi.localIP());
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(ap_ssid, ap_password);
+  Serial.println("Access Point started");
+  Serial.print("AP IP address: ");
+  Serial.println(WiFi.softAPIP());
 }
 
 void setup() {
