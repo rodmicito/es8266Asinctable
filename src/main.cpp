@@ -12,8 +12,7 @@
 #include <ESPAsyncWebServer.h>
 #include "LittleFS.h"
 #include <Arduino_JSON.h>
-#include <Adafruit_BME280.h>
-#include <Adafruit_Sensor.h>
+
 
 // Replace with your network credentials
 const char* ssid = "cuarto";
@@ -32,22 +31,18 @@ JSONVar readings;
 unsigned long lastTime = 0;  
 unsigned long timerDelay = 30000;
 
-// Create a sensor object
-Adafruit_BME280 bme;         // BME280 connect to ESP32 I2C (GPIO 21 = SDA, GPIO 22 = SCL)
 
-// Init BME280
-void initBME(){
-  if (!bme.begin(0x76)) {
-    Serial.println("Could not find a valid BME280 sensor, check wiring!");
-    while (1);
-  }
-}
 
-// Get Sensor Readings and return JSON object
+
+
+// Get Simulated Sensor Readings and return JSON object
 String getSensorReadings() {
-  readings["temperature"] = String(bme.readTemperature());
-  readings["humidity"] =  String(bme.readHumidity());
-  readings["pressure"] = String(bme.readPressure()/100.0F);
+  float temp = random(200, 350) / 10.0;      // 20.0 - 35.0 °C
+  float hum = random(300, 800) / 10.0;       // 30.0 - 80.0 %
+  float pres = random(9500, 10500) / 10.0;   // 950.0 - 1050.0 hPa
+  readings["temperature"] = String(temp);
+  readings["humidity"] = String(hum);
+  readings["pressure"] = String(pres);
   String jsonString = JSON.stringify(readings);
   return jsonString;
 }
@@ -77,7 +72,6 @@ void initWiFi() {
 void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
-  initBME();
   initWiFi();
   initFS();
 
