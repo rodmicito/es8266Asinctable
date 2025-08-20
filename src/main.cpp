@@ -36,6 +36,11 @@ unsigned long timerDelay = 30000;
 const int IR_SENSOR_PIN = D2;
 volatile unsigned long pulseCount = 0;
 
+// Viscometer Couette constants (from technical specifications)
+const float C_GEOM = 2.856;        // Geometric constant (m³)
+const float PULSE_TO_TORQUE = 0.001; // Conversion factor: pulses to N·m
+const float RPM_TO_RAD_S = 0.10472;  // Conversion: RPM to rad/s (2π/60)
+
 void IRAM_ATTR handleIrSensor() {
   pulseCount++;
 }
@@ -44,15 +49,37 @@ void IRAM_ATTR handleIrSensor() {
 
 
 
-// Get Sensor Readings and return JSON object (with IR pulse count)
+// Calculate viscosity using Couette viscometer theory
+float calculateViscosity(unsigned long pulses, float rpm) {
+  // Convert pulses to torque (N·m)
+  float torque = pulses * PULSE_TO_TORQUE;
+  
+  // Convert RPM to angular velocity (rad/s)
+  float omega = rpm * RPM_TO_RAD_S;
+  
+  // Avoid division by zero
+  if (omega == 0) return 0.0;
+  
+  // Calculate dynamic viscosity: η = M/(C_geom × ω) 
+  float viscosity = torque / (C_GEOM * omega);
+  
+  // Convert from Pa·s to mPa·s (millipascal-seconds)
+  return viscosity * 1000.0;
+}
+
+// Get IR pulse count and calculated viscosity
 String getSensorReadings() {
-  float temp = random(200, 350) / 10.0;      // 20.0 - 35.0 °C
-  float hum = random(300, 800) / 10.0;       // 30.0 - 80.0 %
-  float pres = random(9500, 10500) / 10.0;   // 950.0 - 1050.0 hPa
-  readings["temperature"] = String(temp);
-  readings["humidity"] = String(hum);
-  readings["pressure"] = String(pres);
+  // Simulate RPM based on pulse count (for demonstration)
+  float simulatedRPM = (pulseCount % 100) + 10; // 10-109 RPM range
+  
+  // Calculate viscosity using Couette theory
+  float viscosity_mPas = calculateViscosity(pulseCount, simulatedRPM);
+  
   readings["ir_pulses"] = String(pulseCount);
+  readings["rpm"] = String(simulatedRPM, 1);
+  readings["viscosity"] = String(viscosity_mPas, 3);
+  readings["units"] = "mPa·s";
+  
   String jsonString = JSON.stringify(readings);
   return jsonString;
 }
