@@ -58,3 +58,52 @@ table {
   font-size: 0.8rem;
   color:#1282A2;
 }
+
+/* Experiment control buttons */
+.experiment-controls {
+  margin: 20px 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.experiment-controls button {
+  background-color: #034078;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  font-size: 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  min-width: 150px;
+}
+
+.experiment-controls button:hover {
+  background-color: #50b8b4;
+}
+
+.experiment-controls button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+#start-btn {
+  background-color: #28a745;
+}
+
+#stop-btn {
+  background-color: #dc3545;
+}
+
+#reset-btn {
+  background-color: #ffc107;
+  color: #000;
+}
+
+.experiment-status {
+  font-weight: bold;
+  color: #034078;
+  margin: 10px 0;
+}

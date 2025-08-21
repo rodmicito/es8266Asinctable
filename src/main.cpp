@@ -46,8 +46,15 @@ const float RPM_TO_RAD_S = 0.10472;  // Conversion: RPM to rad/s (2π/60)
 bool systemStable = true;
 unsigned long lastResetCheck = 0;
 
+// Experiment control
+bool experimentRunning = false;
+unsigned long experimentStartTime = 0;
+unsigned long pulseCountAtStart = 0;
+
 void IRAM_ATTR handleIrSensor() {
-  pulseCount++;
+  if (experimentRunning) {  // Only count pulses during experiment
+    pulseCount++;
+  }
 }
 
 
@@ -83,17 +90,22 @@ String getSensorReadings() {
   // Simulate RPM based on pulse count (for demonstration)
   float simulatedRPM = (pulseCount % 100) + 10; // 10-109 RPM range
   
+  // Calculate experiment pulses (only pulses during experiment)
+  unsigned long experimentPulses = experimentRunning ? 
+    (pulseCount - pulseCountAtStart) : pulseCount;
+  
   // Calculate viscosity using Couette theory
-  float viscosity_mPas = calculateViscosity(pulseCount, simulatedRPM);
+  float viscosity_mPas = calculateViscosity(experimentPulses, simulatedRPM);
   
   // Clear previous data to avoid memory issues
   readings = JSONVar();
   
-  readings["ir_pulses"] = String(pulseCount);
+  readings["ir_pulses"] = String(experimentPulses);
   readings["rpm"] = String(simulatedRPM, 1);
   readings["viscosity"] = String(viscosity_mPas, 3);
   readings["units"] = "mPa·s";
   readings["status"] = "OK";
+  readings["experiment_status"] = experimentRunning ? "running" : "stopped";
   
   String jsonString = JSON.stringify(readings);
   return jsonString;
@@ -147,6 +159,37 @@ void setup() {
     json = String(); // Free memory
   });
 
+  // Experiment control endpoint
+  server.on("/control", HTTP_POST, [](AsyncWebServerRequest *request){
+    String action = "";
+    if (request->hasParam("action")) {
+      action = request->getParam("action")->value();
+    }
+    
+    if (action == "start") {
+      experimentRunning = true;
+      experimentStartTime = millis();
+      pulseCountAtStart = pulseCount;
+      Serial.println("Experiment STARTED");
+      request->send(200, "text/plain", "Experiment started");
+    }
+    else if (action == "stop") {
+      experimentRunning = false;
+      Serial.println("Experiment STOPPED");
+      request->send(200, "text/plain", "Experiment stopped");
+    }
+    else if (action == "reset") {
+      pulseCount = 0;
+      pulseCountAtStart = 0;
+      experimentStartTime = millis();
+      Serial.println("Counters RESET");
+      request->send(200, "text/plain", "Counters reset");
+    }
+    else {
+      request->send(400, "text/plain", "Invalid action");
+    }
+  });
+
   events.onConnect([](AsyncEventSourceClient *client){
     if(client->lastId()){
       Serial.printf("Client reconnected! Last message ID: %u\n", client->lastId());
@@ -155,10 +198,6 @@ void setup() {
     client->send("hello!", NULL, millis(), 10000);
   });
   
-  // Add error handling for events
-  events.onError([](AsyncEventSourceClient *client, int error){
-    Serial.printf("Event source error: %d\n", error);
-  });
   server.addHandler(&events);
 
   // Start server
