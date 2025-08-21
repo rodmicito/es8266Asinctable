@@ -30,7 +30,8 @@ JSONVar readings;
 
 // Timer variables
 unsigned long lastTime = 0;
-unsigned long timerDelay = 30000;
+unsigned long timerDelay = 60000;  // Aumentado a 60 segundos para más estabilidad
+unsigned long lastPulseCount = 0;  // Para detectar cambios estables
 
 // FC-03 IR sensor on D2 (GPIO4)
 const int IR_SENSOR_PIN = D2;
@@ -40,6 +41,10 @@ volatile unsigned long pulseCount = 0;
 const float C_GEOM = 2.856;        // Geometric constant (m³)
 const float PULSE_TO_TORQUE = 0.001; // Conversion factor: pulses to N·m
 const float RPM_TO_RAD_S = 0.10472;  // Conversion: RPM to rad/s (2π/60)
+
+// Stability control
+bool systemStable = true;
+unsigned long lastResetCheck = 0;
 
 void IRAM_ATTR handleIrSensor() {
   pulseCount++;
@@ -69,16 +74,26 @@ float calculateViscosity(unsigned long pulses, float rpm) {
 
 // Get IR pulse count and calculated viscosity
 String getSensorReadings() {
+  // Check system stability
+  if (!systemStable) {
+    readings["error"] = "System unstable";
+    return JSON.stringify(readings);
+  }
+  
   // Simulate RPM based on pulse count (for demonstration)
   float simulatedRPM = (pulseCount % 100) + 10; // 10-109 RPM range
   
   // Calculate viscosity using Couette theory
   float viscosity_mPas = calculateViscosity(pulseCount, simulatedRPM);
   
+  // Clear previous data to avoid memory issues
+  readings = JSONVar();
+  
   readings["ir_pulses"] = String(pulseCount);
   readings["rpm"] = String(simulatedRPM, 1);
   readings["viscosity"] = String(viscosity_mPas, 3);
   readings["units"] = "mPa·s";
+  readings["status"] = "OK";
   
   String jsonString = JSON.stringify(readings);
   return jsonString;
@@ -98,9 +113,15 @@ void initFS() {
 void initWiFi() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(ap_ssid, ap_password);
+  
+  // Wait for AP to start
+  delay(2000);
+  
   Serial.println("Access Point started");
   Serial.print("AP IP address: ");
   Serial.println(WiFi.softAPIP());
+  Serial.print("Max connections: ");
+  Serial.println(WiFi.softAPgetStationNum());
 }
 
 void setup() {
@@ -123,16 +144,20 @@ void setup() {
   server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request){
     String json = getSensorReadings();
     request->send(200, "application/json", json);
-    json = String();
+    json = String(); // Free memory
   });
 
   events.onConnect([](AsyncEventSourceClient *client){
     if(client->lastId()){
-      Serial.printf("Client reconnected! Last message ID that it got is: %u\n", client->lastId());
+      Serial.printf("Client reconnected! Last message ID: %u\n", client->lastId());
     }
-    // send event with message "hello!", id current millis
-    // and set reconnect delay to 1 second
+    // Send initial connection message
     client->send("hello!", NULL, millis(), 10000);
+  });
+  
+  // Add error handling for events
+  events.onError([](AsyncEventSourceClient *client, int error){
+    Serial.printf("Event source error: %d\n", error);
   });
   server.addHandler(&events);
 
@@ -141,10 +166,35 @@ void setup() {
 }
 
 void loop() {
-  if ((millis() - lastTime) > timerDelay) {
-    // Send Events to the client with the Sensor Readings Every 30 seconds
-    events.send("ping",NULL,millis());
-    events.send(getSensorReadings().c_str(),"new_readings" ,millis());
+  // Check system stability every 5 seconds
+  if (millis() - lastResetCheck > 5000) {
+    // Monitor memory and connections
+    if (ESP.getFreeHeap() < 1000) {
+      Serial.println("Warning: Low memory");
+      systemStable = false;
+    } else {
+      systemStable = true;
+    }
+    lastResetCheck = millis();
+  }
+
+  // Send sensor data every 30 seconds
+  if ((millis() - lastTime) > timerDelay && systemStable) {
+    // Check if pulse count is changing (system active)
+    if (pulseCount != lastPulseCount) {
+      lastPulseCount = pulseCount;
+      
+      // Send events with error handling
+      String sensorData = getSensorReadings();
+      if (sensorData.length() > 0) {
+        events.send("ping", NULL, millis());
+        events.send(sensorData.c_str(), "new_readings", millis());
+        Serial.printf("Data sent. Free heap: %d bytes\n", ESP.getFreeHeap());
+      }
+    }
     lastTime = millis();
   }
+  
+  // Small delay to prevent watchdog reset
+  delay(10);
 }
