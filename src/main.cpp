@@ -30,12 +30,13 @@ JSONVar readings;
 
 // Timer variables
 unsigned long lastTime = 0;
-unsigned long timerDelay = 60000;  // Aumentado a 60 segundos para más estabilidad
+unsigned long timerDelay = 90000;  // Aumentado a 90 segundos para mayor estabilidad
 unsigned long lastPulseCount = 0;  // Para detectar cambios estables
 
 // FC-03 IR sensor on D2 (GPIO4)
 const int IR_SENSOR_PIN = D2;
 volatile unsigned long pulseCount = 0;
+volatile bool pulseDetected = false;  // Flag para manejar interrupciones de forma segura
 
 // Viscometer Couette constants (from technical specifications)
 const float C_GEOM = 2.856;        // Geometric constant (m³)
@@ -52,8 +53,9 @@ unsigned long experimentStartTime = 0;
 unsigned long pulseCountAtStart = 0;
 
 void IRAM_ATTR handleIrSensor() {
-  if (experimentRunning) {  // Only count pulses during experiment
-    pulseCount++;
+  // Interrupción simplificada para mayor estabilidad
+  if (experimentRunning) {
+    pulseDetected = true;
   }
 }
 
@@ -79,36 +81,30 @@ float calculateViscosity(unsigned long pulses, float rpm) {
   return viscosity * 1000.0;
 }
 
-// Get IR pulse count and calculated viscosity
+// Get IR pulse count and calculated viscosity (optimized for memory)
 String getSensorReadings() {
-  // Check system stability
+  // Check system stability first
   if (!systemStable) {
-    readings["error"] = "System unstable";
-    return JSON.stringify(readings);
+    return "{\"error\":\"System unstable\"}";
   }
   
-  // Simulate RPM based on pulse count (for demonstration)
-  float simulatedRPM = (pulseCount % 100) + 10; // 10-109 RPM range
-  
-  // Calculate experiment pulses (only pulses during experiment)
+  // Calculate values
   unsigned long experimentPulses = experimentRunning ? 
     (pulseCount - pulseCountAtStart) : pulseCount;
-  
-  // Calculate viscosity using Couette theory
+  float simulatedRPM = (experimentPulses % 100) + 10.0;
   float viscosity_mPas = calculateViscosity(experimentPulses, simulatedRPM);
   
-  // Clear previous data to avoid memory issues
-  readings = JSONVar();
+  // Build JSON string directly (more memory efficient)
+  String json = "{";
+  json += "\"ir_pulses\":" + String(experimentPulses) + ",";
+  json += "\"rpm\":" + String(simulatedRPM, 1) + ",";
+  json += "\"viscosity\":" + String(viscosity_mPas, 3) + ",";
+  json += "\"units\":\"mPa·s\",";
+  json += "\"status\":\"OK\",";
+  json += "\"experiment_status\":\"" + String(experimentRunning ? "running" : "stopped") + "\"";
+  json += "}";
   
-  readings["ir_pulses"] = String(experimentPulses);
-  readings["rpm"] = String(simulatedRPM, 1);
-  readings["viscosity"] = String(viscosity_mPas, 3);
-  readings["units"] = "mPa·s";
-  readings["status"] = "OK";
-  readings["experiment_status"] = experimentRunning ? "running" : "stopped";
-  
-  String jsonString = JSON.stringify(readings);
-  return jsonString;
+  return json;
 }
 
 // Initialize LittleFS
@@ -205,35 +201,53 @@ void setup() {
 }
 
 void loop() {
-  // Check system stability every 5 seconds
-  if (millis() - lastResetCheck > 5000) {
+  // Manejar pulsos fuera de la interrupción para mayor estabilidad
+  if (pulseDetected) {
+    pulseDetected = false;
+    pulseCount++;
+  }
+  
+  // Check system stability every 10 seconds (menos frecuente)
+  if (millis() - lastResetCheck > 10000) {
     // Monitor memory and connections
-    if (ESP.getFreeHeap() < 1000) {
-      Serial.println("Warning: Low memory");
+    size_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap < 2000) {  // Umbral más conservador
+      Serial.printf("Warning: Low memory - %u bytes\n", freeHeap);
       systemStable = false;
     } else {
       systemStable = true;
     }
     lastResetCheck = millis();
+    
+    // Watchdog reset manual para evitar cuelgues
+    ESP.wdtFeed();
   }
 
-  // Send sensor data every 30 seconds
+  // Send sensor data con intervalo aumentado
   if ((millis() - lastTime) > timerDelay && systemStable) {
-    // Check if pulse count is changing (system active)
-    if (pulseCount != lastPulseCount) {
+    // Solo enviar si hay cambios significativos o es forzado
+    unsigned long timeSinceLastUpdate = millis() - lastTime;
+    
+    if (timeSinceLastUpdate > timerDelay || abs((long)pulseCount - (long)lastPulseCount) > 2) {
       lastPulseCount = pulseCount;
       
       // Send events with error handling
       String sensorData = getSensorReadings();
-      if (sensorData.length() > 0) {
+      if (sensorData.length() > 0 && sensorData.length() < 500) {  // Validar tamaño
         events.send("ping", NULL, millis());
         events.send(sensorData.c_str(), "new_readings", millis());
-        Serial.printf("Data sent. Free heap: %d bytes\n", ESP.getFreeHeap());
+        Serial.printf("Data sent. Free heap: %u bytes\n", ESP.getFreeHeap());
+        
+        // Liberar memoria explícitamente
+        sensorData = String();
+      } else {
+        Serial.println("Data validation failed or too large");
       }
+      lastTime = millis();
     }
-    lastTime = millis();
   }
   
   // Small delay to prevent watchdog reset
-  delay(10);
+  delay(50);  // Aumentado para mayor estabilidad
+  yield();    // Permitir que el ESP8266 maneje tareas internas
 }
