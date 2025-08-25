@@ -38,6 +38,18 @@ const int IR_SENSOR_PIN = D2;
 volatile unsigned long pulseCount = 0;
 volatile bool pulseDetected = false;  // Flag para manejar interrupciones de forma segura
 
+// JSN-SR04T Ultrasonic sensor pins
+const int TRIGGER_PIN = D5;  // GPIO14
+const int ECHO_PIN = D6;     // GPIO12
+
+// Distance measurement variables
+volatile unsigned long echoStartTime = 0;
+volatile unsigned long echoEndTime = 0;
+volatile bool echoReceived = false;
+float distance_cm = 0.0;
+unsigned long lastDistanceRead = 0;
+const unsigned long DISTANCE_INTERVAL = 1000;  // Read distance every 1 second
+
 // Viscometer Couette constants (from technical specifications)
 const float C_GEOM = 2.856;        // Geometric constant (m³)
 const float PULSE_TO_TORQUE = 0.001; // Conversion factor: pulses to N·m
@@ -57,6 +69,58 @@ void IRAM_ATTR handleIrSensor() {
   if (experimentRunning) {
     pulseDetected = true;
   }
+}
+
+// JSN-SR04T Echo interrupt handler
+void IRAM_ATTR handleEcho() {
+  if (digitalRead(ECHO_PIN) == HIGH) {
+    // Echo pulse started
+    echoStartTime = micros();
+  } else {
+    // Echo pulse ended
+    echoEndTime = micros();
+    echoReceived = true;
+  }
+}
+
+// Function to trigger ultrasonic measurement
+void triggerUltrasonic() {
+  digitalWrite(TRIGGER_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIGGER_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIGGER_PIN, LOW);
+}
+
+// Function to read distance from JSN-SR04T
+float readDistance() {
+  echoReceived = false;
+  
+  // Trigger measurement
+  triggerUltrasonic();
+  
+  // Wait for echo with timeout (30ms max for ~5m range)
+  unsigned long timeout = millis() + 30;
+  while (!echoReceived && millis() < timeout) {
+    yield(); // Allow system tasks
+  }
+  
+  if (!echoReceived) {
+    return -1.0; // Timeout - no object detected or out of range
+  }
+  
+  // Calculate distance in cm
+  // Speed of sound = 343 m/s = 0.0343 cm/µs
+  // Distance = (time * speed) / 2 (round trip)
+  unsigned long duration = echoEndTime - echoStartTime;
+  float distance = (duration * 0.0343) / 2.0;
+  
+  // Validate range (JSN-SR04T: 2cm - 450cm)
+  if (distance < 2.0 || distance > 450.0) {
+    return -1.0; // Out of valid range
+  }
+  
+  return distance;
 }
 
 
@@ -88,6 +152,12 @@ String getSensorReadings() {
     return "{\"error\":\"System unstable\"}";
   }
   
+  // Read distance if enough time has passed
+  if (millis() - lastDistanceRead >= DISTANCE_INTERVAL) {
+    distance_cm = readDistance();
+    lastDistanceRead = millis();
+  }
+  
   // Calculate values
   unsigned long experimentPulses = experimentRunning ? 
     (pulseCount - pulseCountAtStart) : pulseCount;
@@ -99,6 +169,8 @@ String getSensorReadings() {
   json += "\"ir_pulses\":" + String(experimentPulses) + ",";
   json += "\"rpm\":" + String(simulatedRPM, 1) + ",";
   json += "\"viscosity\":" + String(viscosity_mPas, 3) + ",";
+  json += "\"distance\":" + String(distance_cm, 1) + ",";
+  json += "\"distance_units\":\"cm\",";
   json += "\"units\":\"mPa·s\",";
   json += "\"status\":\"OK\",";
   json += "\"experiment_status\":\"" + String(experimentRunning ? "running" : "stopped") + "\"";
@@ -136,8 +208,21 @@ void setup() {
   // Serial port for debugging purposes
 
   Serial.begin(9600);
+  
+  // Initialize IR sensor (FC-03)
   pinMode(IR_SENSOR_PIN, INPUT);
   attachInterrupt(digitalPinToInterrupt(IR_SENSOR_PIN), handleIrSensor, FALLING);
+  
+  // Initialize JSN-SR04T ultrasonic sensor
+  pinMode(TRIGGER_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  digitalWrite(TRIGGER_PIN, LOW);
+  attachInterrupt(digitalPinToInterrupt(ECHO_PIN), handleEcho, CHANGE);
+  
+  Serial.println("Sensors initialized:");
+  Serial.println("- FC-03 IR sensor on pin D2 (GPIO4)");
+  Serial.println("- JSN-SR04T ultrasonic on pins D5(trig)/D6(echo)");
+  
   initWiFi();
   initFS();
 
