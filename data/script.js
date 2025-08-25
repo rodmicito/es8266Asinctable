@@ -70,17 +70,6 @@ function getReadings(){
       document.getElementById("viscosity").innerHTML = myObj.viscosity;
       document.getElementById("units").innerHTML = myObj.units;
       
-      // Update distance reading
-      if (myObj.distance !== undefined) {
-        if (myObj.distance >= 0) {
-          document.getElementById("distance").innerHTML = myObj.distance;
-          document.getElementById("distance_units").innerHTML = myObj.distance_units || "cm";
-        } else {
-          document.getElementById("distance").innerHTML = "---";
-          document.getElementById("distance_units").innerHTML = "cm";
-        }
-      }
-      
       // Update experiment status
       if (myObj.experiment_status) {
         experimentRunning = (myObj.experiment_status === "running");
@@ -117,17 +106,6 @@ if (!!window.EventSource) {
     document.getElementById("rpm").innerHTML = obj.rpm;
     document.getElementById("viscosity").innerHTML = obj.viscosity;
     document.getElementById("units").innerHTML = obj.units;
-    
-    // Update distance reading
-    if (obj.distance !== undefined) {
-      if (obj.distance >= 0) {
-        document.getElementById("distance").innerHTML = obj.distance;
-        document.getElementById("distance_units").innerHTML = obj.distance_units || "cm";
-      } else {
-        document.getElementById("distance").innerHTML = "---";
-        document.getElementById("distance_units").innerHTML = "cm";
-      }
-    }
     
     // Update experiment status from real-time data
     if (obj.experiment_status) {
